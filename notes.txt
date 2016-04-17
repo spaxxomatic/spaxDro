@@ -1,0 +1,2 @@
+arduino project:  
+see C:\avr\arduino\projects\dro_as530x\dro_as530x_3sensors_pinchange
