@@ -3,6 +3,7 @@ import tkMessageBox
 import serial
 import ConfigParser
 from thread import start_new_thread
+import time
 #from PIL import ImageTk, Image
 
 root = Tk()
@@ -19,7 +20,7 @@ zstep = float(15)  #micron/step
 
 class Storage(list): pass
 class Display:pass #forward declaration
-thread_display = None
+
 def on_closing():
     if tkMessageBox.askokcancel("Quit", "Do you want to quit?"):
         Display.exit = 1
@@ -35,27 +36,38 @@ class Display():
     ystorage = Storage()
     zstorage = Storage()
     exit = 0 #flag for exit
-    def refresh(self):
+    def refresh_threadfunc(self):
         while self.exit == 0:
-            if self.globalerr:
-                xdisplay.set( "%s %s"%(self.globalerr,self.xval))
-                self.xval += 1
-                ydisplay.set( self.globalerr)
-                zdisplay.set( self.globalerr)
-            else:    
-                #xdisplay.set(xval)
-                xdisplay.set("X: %.3f"%(xstep*(self.xval - self.xval_corr) / 1000))
-                ydisplay.set("Y: %.3f"%(ystep*(self.yval - self.yval_corr)/ 1000))
-                zdisplay.set("Z: %.3f"%(zstep*(self.zval - self.zval_corr)/ 1000))
+            self.refresh()
+            
+    def refresh(self):
+        if self.globalerr:
+            xdisplay.set( "%s %s"%(self.globalerr,self.xval))
+            ydisplay.set( self.globalerr)
+            zdisplay.set( self.globalerr)
+        else:    
+            #xdisplay.set(xval)
+            xdisplay.set("X: %.3f"%(xstep*(self.xval - self.xval_corr) / 1000))
+            ydisplay.set("Y: %.3f"%(ystep*(self.yval - self.yval_corr)/ 1000))
+            zdisplay.set("Z: %.3f"%(zstep*(self.zval - self.zval_corr)/ 1000))
+                
+    def history(self):
+        self.xval_corr = self.xstorage.pull()
     def zeroX(self): 
+        self.saveX()
         self.xval_corr = self.xval 
     def zeroY(self): 
+        self.saveY()
         self.yval_corr = self.yval
-    def zeroZ(self): 
+    def zeroZ(self):
+        self.saveZ()    
         self.zval_corr = self.zval
-    def saveX(self): self.xstorage.append(self.xval)
-    def saveY(self): self.ystorage.append(self.yval)
-    def saveZ(self): self.zstorage.append(self.zval)
+    def saveX(self): 
+        self.xstorage.append(self.xval)
+    def saveY(self): 
+        self.ystorage.append(self.yval)
+    def saveZ(self): 
+        self.zstorage.append(self.zval)
 
 SENSOR_ERRORS = {
     "1":'X magnet lost',
@@ -64,6 +76,7 @@ SENSOR_ERRORS = {
     "4":'Multichange IRQ',
     "5":'Spurious IRQ',
 }
+
 class SerialConn():
     buff = []
     def __init__(self, port, display):
@@ -97,6 +110,23 @@ class SerialConn():
                     self.buff.append(byte)
                     #debugstr.set(" ".join(self.buff))
 
+class SerialConnMock(SerialConn):    
+    def __init__(self, port, display):
+        self.display = display
+        
+    def receive(self):
+        self.xval = 10.1
+        self.yval = 0.1
+        self.zval = 0.1
+        while True:
+            self.xval += 1
+            display.xval = self.xval
+            display.yval = self.yval
+            display.zval = self.zval
+            #print " --------------%i "%self.xval
+            time.sleep(0.1)
+            
+                    
 display = Display()
 
 class Settings():
@@ -119,25 +149,48 @@ class Settings():
 class DroFunctions:
     def drillseries(self):
         pass
-        
-class Application(Frame):
-    def say_hi(self):
-        print "sayhi"
-    def settings(self):
-        #t = Toplevel(self)
-        #t.wm_title("Window "  )
-        #l = Label(t, text="This is window ")
-        #l.pack(side="top", fill="both", expand=True, padx=100, pady=100)        
-        Settings(self).open()
 
+    
+class Application(Frame):
+    def settings(self):
+        Settings(self).open()
+    
+    def histframe(self):
+        return Frame(self.HISTORYFRAME, height=30, bd=1, relief=SUNKEN)
+        
+    def update_pos(self):
+        self.chx += 1
+        #Button(self.HISTORYFRAME_X, text='QUIT', fg='red', command=on_closing).grid(row=0,column=self.chx)
+        self.master.after(50, self.update_pos)
+        self.pos_display.refresh()
+        
     def createWidgets(self):
+        self.chx = 0
+        #self.QUIT = Button(self, text='QUIT', fg='red', command=on_closing).pack({"side": "left"})
+        #self.Settings = Button(self, text='Settings', fg='green', command=self.settings).pack({"side": "left"})
+        
         self.dbg = Label(root, textvariable=debugstr, relief=FLAT, height=1, width=70, font="Arial 10 bold")
-        self.dbg.pack({"side": "top"})
+        self.dbg.grid(row=1)
+        self.HISTORYFRAME = Frame(root, width=768, height=30)
+        
+        Label(self.HISTORYFRAME, text="XMEM", bg='#efe',  height=1,  bd=1, width=12, font = "Calibri 12 bold").grid(row=0)
+        self.HISTORYFRAME_X = self.histframe().grid(row=0, column=1)
+        
+        Label(self.HISTORYFRAME, text="YMEM", bg='#efe',  height=1,  bd=1, width=12, font = "Calibri 12 bold").grid(row=1)
+        self.HISTORYFRAME_Y = self.histframe().grid(row=1, column=1)
+
+        Label(self.HISTORYFRAME, text="ZYMEM", bg='#efe',  height=1,  width=12, font = "Calibri 12 bold").grid(row=2)
+        self.HISTORYFRAME_Z = self.histframe().grid(row=2, column=1) 
+        #Label(self.HISTORYFRAME_Z, text="ZMEM", bg='#efe',  height=1, width=12, font = "Calibri 12 bold").pack(side=LEFT)
+
+        self.HISTORYFRAME.grid(row=0)
         
         self.DISPLAYFRAME = Frame(root, width=768, height=576)
-        self.DISPLAYFRAME.pack({"side": "left"})
+        self.DISPLAYFRAME.grid(row=1)
+        
         self.TOOLSFRAME = Frame(root, bg='#fff', width=400)
-        self.TOOLSFRAME.pack({"side": "right"})
+        self.TOOLSFRAME.grid(row=2)
+        
         self.XFRAME = Frame(self.DISPLAYFRAME)
         self.XFRAME.pack()
         self.XZERO = Button(self.XFRAME, text="Zero", command=display.zeroX).pack({"side": "right"})
@@ -171,17 +224,20 @@ class Application(Frame):
         b = Button(self.TOOLSFRAME, compound=LEFT, image=self.drillseries_icon, command=DroFunctions().drillseries)
         #b.grid(row=1, column=1, padx=130)#
         b.pack({"side": "top"})
+        self.update_pos()
         
-        self.QUIT = Button(self, text='QUIT', fg='red', command=on_closing).pack({"side": "left"})
-        self.Settings = Button(self, text='Settings', fg='green', command=self.settings).pack({"side": "left"})
 
-    def __init__(self, master=None):
+    def __init__(self, master, pos_display):
         Frame.__init__(self, master)
-        self.pack()
+        self.grid(row=2)
+        self.pos_display = pos_display
         self.createWidgets()
+        
 
-app = Application(master=root)
-app.master.title("Nutiu DRO")
+app = Application(master=root, pos_display=display)
+
+title = "Spaxx DRO "
+app.master.title(title)
 app.master.minsize(1000, 800)
 config = ConfigParser.ConfigParser()
 config.read("dro.ini")
@@ -191,13 +247,26 @@ try:
     zstep = int(config.get('RESOLUTION', 'z_step_size'))
 except Exception:
     raise "Invalid config file: %s"%(`e`)
-port = 'COM7'
-debugstr.set('..opening ' + port)
-thread_display = start_new_thread(display.refresh, ())
+port = config.get('GENERAL', 'comport')
+mode = config.get('GENERAL', 'mode')
+#thread_display = start_new_thread(display.refresh, ())
+
+msg = " "
+threadmethod = None
+if mode and 'simul' in mode:
+    msg = "Running in simulation mode"
+    threadmethod = SerialConnMock(port, display).receive
+else:
+    debugstr.set('Opening DRO port ' + port)
+    threadmethod = SerialConn(port, display).receive
+
+print msg
+app.master.title(title  + msg ) 
+start_new_thread(threadmethod, ())
 try:
-    start_new_thread(SerialConn(port, display).receive, ())
+        start_new_thread(threadmethod, ())
 except Exception, e:
-    debugstr.set(`e`)
-    display.globalerr = 'INIT ERR'
+        debugstr.set(`e`)
+        display.globalerr = 'INIT ERR'
 
 app.mainloop()
