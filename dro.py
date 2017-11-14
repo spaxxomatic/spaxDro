@@ -30,7 +30,7 @@ class Storage(list): pass
 class Display:pass #forward declaration
 
 def on_closing():
-    if tkMessageBox.askokcancel("Quit", "Do you want to quit?"):
+    #if tkMessageBox.askokcancel("Quit", "Do you want to quit?"):
         Display.exit = 1
         root.destroy()
 root.protocol("WM_DELETE_WINDOW", on_closing)

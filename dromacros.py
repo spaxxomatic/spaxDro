@@ -17,26 +17,45 @@ class Projector():
         radius = 6#self.screenwidth*self.screenheight/(len(coords)**2)
         #print "diam %s"%diam
         (xpad, ypad) = self.xpad , self.ypad
-        self.ypad = 10
-        self.canvas
-        x_max = x_max - x_min
-        y_max = y_max - y_min
-        x_size_factor = (self.canvas.width-2*xpad)/x_max
-        y_size_factor = (self.canvas.height-2*ypad)/y_max
+        
+        x_len = float(x_max) - float(x_min)
+        y_len = float(y_max) - float(y_min)
+        if x_len == 0 or y_len == 0: #only one point?
+            x_size_factor = 1
+            y_size_factor = 1
+        else:
+            x_size_factor = float((self.canvas.width)/x_len)
+            y_size_factor = float((self.canvas.height)/y_len)
         if self.keep_scale_ratio:
             if x_size_factor < y_size_factor:
                 y_size_factor = x_size_factor
             else:
                 x_size_factor = y_size_factor
-        self.canvas.config(width=x_max*x_size_factor + 2*xpad, height=y_max*y_size_factor + 2*ypad)            
-        #print "factor %s"%size_factor
-        canvas_width, canvas_height = self.canvas.width, self.canvas.height
+        self.cwidth = x_len*x_size_factor 
+        self.cheight = y_len*y_size_factor
+        x_size_factor = float((self.cwidth-2*xpad)/x_len)
+        y_size_factor = float((self.cheight-2*ypad)/y_len)
+        
+        print "w %i l %i"%(self.cwidth, self.cheight)
+        self.canvas.config(width=self.cwidth, height=self.cheight)
+        x_center_offset = (float(self.cwidth) - x_len*x_size_factor)/2 + xpad
+        y_center_offset = (float(self.cheight) - x_len*y_size_factor)/2 + ypad
+        #x_center_offset = (x_len*x_size_factor)/2 + xpad 
+        #y_center_offset = (x_len*y_size_factor)/2 + ypad 
+        
+        #y_center_offset = xpad
+        #x_center_offset = ypad
+        print "factor %.3f"%x_size_factor
+        print "center_offset %.3f %.3f"%(x_center_offset, y_center_offset)
+        #canvas_width, canvas_height = self.canvas.width, self.canvas.height
         for idx, p in enumerate(coords):
-            x = (p[0]-x_min)*x_size_factor + xpad  #x_min -> shift to 0
-            y = (p[1]-y_min)*y_size_factor + ypad
-            self.canvas.create_line(0, y, canvas_width, y, fill="#ccc")
-            self.canvas.create_line(x, 0, x, canvas_height, fill="#ccc")
+            x = (p[0]-x_min)*x_size_factor + x_center_offset #x_min -> shift to 0
+            y = (p[1]-y_min)*y_size_factor + y_center_offset
             self.canvas.create_oval(x-radius, y-radius, x+radius, y+radius, fill='#55b')
+            #create a cross on each point 
+            self.canvas.create_line(x-10, y, x+10, y, fill="#fff")
+            self.canvas.create_line(x, y-10, x, y+10, fill="#fff")
+        
             
 class Mbox(object):
 
