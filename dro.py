@@ -14,6 +14,7 @@ zdisplay = StringVar()
 wdisplay = StringVar()
 bdisplay = StringVar()
 rpmdisplay = StringVar()
+root.coords_display = StringVar()
 debugstr = StringVar()
 xstep, ystep, zstep = None, None, None
 config = ConfigParser.ConfigParser()
@@ -183,7 +184,6 @@ class Application(Frame):
         Label(f, textvariable=pos_variable, bg='#efe', relief=FLAT, height=1, width=30, font = "Arial 32 ").pack({"side": "left"})
         f.pack()
         
-    
     def createWidgets(self):
         self.chx = 0
         self.MENUFRAME = Frame(root, width=self.width, height=30)
@@ -256,6 +256,9 @@ class Application(Frame):
         self.drillseries_circ_icon = PhotoImage(file="circle_drills.gif")
         b = Button(self.TOOLSFRAME, compound=LEFT, image=self.drillseries_rect_icon, command=macros.Funcs.drillseries_rect).pack({"side": "left"})
         b = Button(self.TOOLSFRAME, compound=LEFT, image=self.drillseries_circ_icon, command=macros.Funcs.drillseries_circ).pack({"side": "left"})
+        
+        self.cd = Label(root, textvariable=root.coords_display, relief=FLAT, height=1, width=70, font="Arial 10")
+        self.cd.grid(row=self.nextrow())
                 
         #c.create_line(0, 100, 200, 0, fill="red", dash=(4, 4))
         #c.create_rectangle(50, 25, 150, 75, fill="blue")

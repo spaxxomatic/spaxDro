@@ -13,7 +13,31 @@ class Projector():
         self.ypad = 10
         self.keep_scale_ratio = keep_scale_ratio
         canvas.delete("all")
-    def show_points(self, coords, x_max, y_max, x_min=0, y_min=0):
+        self.coords_display = root.coords_display
+    
+    def m_over_handler(self):
+        def highlight_point(event):
+            item = event.widget.find_closest(event.x, event.y)
+            #print item[0]
+            #print item
+            #print item.index
+            #machine_coords = self.coords[]
+            #self.coords_display.set("%.4f"%(xstep*(self.xval - self.xval_corr) / 1000))
+            idx = int(canvas.gettags(item)[0])
+            self.coords_display.set("X%.3f Y%.3f"%self.machine_coords[int(idx)])
+        return highlight_point
+        
+    def click_point_handler(self):
+        def click_point(event):
+            #print('Got object click', event.x, event.y)
+            item = event.widget.find_closest(event.x, event.y)
+            current_color = event.widget.itemcget(item, 'fill')
+            event.widget.itemconfig(item, fill='red')        
+        return click_point
+        
+    def show_points(self, machine_coords, x_max, y_max, x_min=0, y_min=0):
+        self.items = []
+        self.machine_coords = machine_coords
         radius = 6#self.screenwidth*self.screenheight/(len(coords)**2)
         #print "diam %s"%diam
         (xpad, ypad) = self.xpad , self.ypad
@@ -21,11 +45,11 @@ class Projector():
         x_len = float(x_max) - float(x_min)
         y_len = float(y_max) - float(y_min)
         if x_len == 0 or y_len == 0: #only one point?
-            x_size_factor = 1
-            y_size_factor = 1
-        else:
-            x_size_factor = float((self.canvas.width)/x_len)
-            y_size_factor = float((self.canvas.height)/y_len)
+            x_len  = 1
+            y_len  = 1
+
+        x_size_factor = float((self.canvas.width)/x_len)
+        y_size_factor = float((self.canvas.height)/y_len)
         if self.keep_scale_ratio:
             if x_size_factor < y_size_factor:
                 y_size_factor = x_size_factor
@@ -35,32 +59,32 @@ class Projector():
         self.cheight = y_len*y_size_factor
         x_size_factor = float((self.cwidth-2*xpad)/x_len)
         y_size_factor = float((self.cheight-2*ypad)/y_len)
-        
-        print "w %i l %i"%(self.cwidth, self.cheight)
+
+        print "w %i l %i x_len %i"%(self.cwidth, self.cheight, x_len)
         self.canvas.config(width=self.cwidth, height=self.cheight)
-        x_center_offset = (float(self.cwidth) - x_len*x_size_factor)/2 + xpad
-        y_center_offset = (float(self.cheight) - x_len*y_size_factor)/2 + ypad
-        #x_center_offset = (x_len*x_size_factor)/2 + xpad 
-        #y_center_offset = (x_len*y_size_factor)/2 + ypad 
-        
-        #y_center_offset = xpad
-        #x_center_offset = ypad
+        x_center_offset = (float(self.cwidth) - x_len*x_size_factor)/2 
+        y_center_offset = (float(self.cheight) - y_len*y_size_factor)/2 
+
         print "factor %.3f"%x_size_factor
         print "center_offset %.3f %.3f"%(x_center_offset, y_center_offset)
         #canvas_width, canvas_height = self.canvas.width, self.canvas.height
-        for idx, p in enumerate(coords):
+        for idx, p in enumerate(machine_coords):
             x = (p[0]-x_min)*x_size_factor + x_center_offset #x_min -> shift to 0
             y = (p[1]-y_min)*y_size_factor + y_center_offset
-            self.canvas.create_oval(x-radius, y-radius, x+radius, y+radius, fill='#55b')
+            this_point_id = self.canvas.create_oval(x-radius, y-radius, x+radius, y+radius, fill='#55b')
+            self.items.append(this_point_id)
+            canvas.itemconfig(this_point_id, tags=("%i"%idx))
+            #tag_bind(this_point_id, event=None, callback, add=None) [#]
+            canvas.tag_bind(this_point_id, '<1>', self.click_point_handler())
+            canvas.tag_bind(this_point_id, '<Enter>', self.m_over_handler())
+            #canvas.addtag_withtag("three", "one")
             #create a cross on each point 
-            self.canvas.create_line(x-10, y, x+10, y, fill="#fff")
-            self.canvas.create_line(x, y-10, x, y+10, fill="#fff")
+            self.canvas.create_line(x-8, y, x+8, y, fill="#fff")
+            self.canvas.create_line(x, y-8, x, y+8, fill="#fff")
         
             
 class Mbox(object):
-
     root = None
-
     def __init__(self, msg, dict_key=None):
         """
         msg = <str> the message to be displayed
@@ -147,10 +171,12 @@ class Funcs:
         ret = d.returns
         def calculate_coords(x_no, x_space, y_no, y_space):
             coords = []
+            x_min = 0
+            y_min = 0
             for i in range(x_no):
                 for j in range(y_no):
                     coords.append((x_space*i, y_space*j))
-            return coords, x_space*x_no, y_space*y_no,0,0
+            return coords, x_space*(x_no-1), y_space*(y_no-1), x_min, y_min
         coords, x_max, y_max, x_min, y_min = calculate_coords(*ret)
         projector.show_points(coords, x_max, y_max, x_min, y_min)
 
