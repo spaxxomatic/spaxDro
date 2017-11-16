@@ -132,7 +132,6 @@ class MacroDialog:
             self.inputboxes.append(b)
             if defvals:
                 b.insert(0,defvals[row])
-            #b_submit['command'] = lambda: self.entry_to_dict(dict_key)
             b.grid(row=row, column=1)
             row += 1  
         
@@ -143,13 +142,13 @@ class MacroDialog:
     def validate(self):
         try:
             for inp in self.inputboxes:
-                val = int(inp.get())
+                val = float(inp.get())
                 self.returns.append(val)
             return 1
         except ValueError:
             tkMessageBox.showwarning(
                 "Bad input",
-                "Illegal values, no chars allowed"
+                "Only number allowed"
             )
             return 0
     def ok(self):
@@ -173,8 +172,8 @@ class Funcs:
             coords = []
             x_min = 0
             y_min = 0
-            for i in range(x_no):
-                for j in range(y_no):
+            for i in range(int(x_no)):
+                for j in range(int(y_no)):
                     coords.append((x_space*i, y_space*j))
             return coords, x_space*(x_no-1), y_space*(y_no-1), x_min, y_min
         coords, x_max, y_max, x_min, y_min = calculate_coords(*ret)
