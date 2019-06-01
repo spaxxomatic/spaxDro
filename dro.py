@@ -6,47 +6,92 @@ from thread import start_new_thread
 import time
 import dromacros as macros
 import os
-from  poslib import LinearPositionComm
+import pickle
+import signal
+import sys
+
+def signal_handler(sig, frame):
+        print('Ctrl+C! Will exit')
+        on_closing()
+        sys.exit(0)
+signal.signal(signal.SIGINT, signal_handler)
+
+from  spaxxpos.poslib import LinearPositionComm
+
 myfolder = os.path.dirname(os.path.realpath(__file__))
 
-#from PIL import ImageTk, Image
 configfile = os.path.join(myfolder,"dro.ini")
 os.chdir(myfolder)
 print "Reading config file %s"%configfile
 root = Tk()
+#root.overrideredirect(True) #hides the title bar
+#root.geometry("{0}x{1}+0+0".format(root.winfo_screenwidth(), root.winfo_screenheight()))
+from drivecontrol import xmotor, ymotor
 xdisplay = StringVar()
 ydisplay = StringVar()
 wdisplay = StringVar()
+xerror = StringVar()
+yerror = StringVar()
+
 bdisplay = StringVar()
 rpmdisplay = StringVar()
 root.coords_display = StringVar()
 debugstr = StringVar()
-xstep, ystep, zstep = None, None, None
+xstep, ystep = None, None
 config = ConfigParser.ConfigParser()
 config.read(configfile)
 
 try:
     xstep = float(config.get('RESOLUTION', 'x_step_size'))
     ystep = float(config.get('RESOLUTION', 'y_step_size'))
-    zstep = float(config.get('RESOLUTION', 'z_step_size'))
+    #zstep = float(config.get('RESOLUTION', 'z_step_size'))
 except Exception, e:
     print "Invalid config file: %s"%(str(e))
     exit(1)
 
 class Storage(list): pass
 class Display:pass #forward declaration
+state_persist_file = 'state.pkl'
+
+def save_state():
+    persist_state = {
+        'xval_corr':display.xval_corr, 
+        'yval_corr':display.yval_corr,
+        'xmotor_state':xmotor.get_state(),
+        'ymotor_state':ymotor.get_state()
+    }
+    with open(state_persist_file, 'w') as file:
+        pickle.dump(persist_state, file)
+
+persist_state = {}
+def load_state():
+    global persist_state
+    try:
+        with open(state_persist_file, 'r') as file:
+            persist_state = pickle.load(file)
+            if persist_state:
+                if persist_state.has_key('xmotor_state'):
+                    xmotor.set_state(persist_state['xmotor_state'])
+                if persist_state.has_key('ymotor_state'):
+                    ymotor.set_state(persist_state['ymotor_state'])
+    except Exception, e:
+        print "Could not load saved state: %s"%str(e)
 
 def on_closing():
     #if tkMessageBox.askokcancel("Quit", "Do you want to quit?"):
+    #save state
+    save_state()
     Display.exit = 1
+    time.sleep(1) #the dro reading thread must end
     root.destroy()
 
 root.protocol("WM_DELETE_WINDOW", on_closing)
 
 class Display():
-    globalerr = None
-    (xval, yval, zval) = (0,0,0)
-    (xval_corr, yval_corr, zval_corr) = (0, 0, 0)
+    axis_stat = None
+    def __init__(self):
+        self.xval_corr = persist_state.get('xval_corr', 0)
+        self.yval_corr = persist_state.get('yval_corr', 0)
     xstorage = Storage()
     ystorage = Storage()
     #zstorage = Storage()
@@ -56,33 +101,30 @@ class Display():
             self.refresh()
             
     def refresh_dro(self):
-        if self.globalerr:
-            xdisplay.set( "%s %s"%(self.globalerr,self.xval))
-            ydisplay.set( self.globalerr)
-            #zdisplay.set( self.globalerr)
-        else:    
-            #xdisplay.set(xval)
-            xdisplay.set("%.3f"%(self.xval - self.xval_corr))
-            ydisplay.set("%.3f"%(self.yval - self.yval_corr))
+        stat = self.axis_stat
+        if stat:
+            xdisplay.set("%.3f"%(stat.xposition - self.xval_corr))
+            ydisplay.set("%.3f"%(stat.yposition - self.yval_corr))
+            if stat.xerror > 0:
+                xerror.set(SENSOR_ERRORS.get(stat.xerror, 'UNKNOWN ERR'))
+            if stat.yerror > 0:
+                yerror.set(SENSOR_ERRORS.get(stat.yerror, 'UNKNOWN ERR'))
             #zdisplay.set("%.3f"%(zstep*(self.zval - self.zval_corr)/ 1000))
                 
     def history(self):
         self.xval_corr = self.xstorage.pull()
     def zeroX(self): 
         self.saveX()
-        self.xval_corr = self.xval 
+        self.xval_corr = self.axis_stat.xposition
     def zeroY(self): 
         self.saveY()
-        self.yval_corr = self.yval
-    def zeroZ(self):
-        self.saveZ()    
-        self.zval_corr = self.zval
+        self.yval_corr = self.axis_stat.yposition
     def saveX(self): 
-        self.xstorage.append(self.xval)
+        self.xstorage.append(self.axis_stat.xposition)
     def saveY(self): 
-        self.ystorage.append(self.yval)
-    def saveZ(self): 
-        self.zstorage.append(self.zval)
+        self.ystorage.append(self.axis_stat.yposition)
+
+SENSOR_ERRORS = {
    #enum {
    #   OK,
    #   WARN_LIN_OR_COF,
@@ -92,14 +134,14 @@ class Display():
    #   ERROR_OCF,
    #   ERROR_UNKNOWN
    # };
-SENSOR_ERRORS = {
-    "1":'Lin warn',
-    "2":'Low mag field',
-    "3":'No mag field',
-    "4":'Parity error',
-    "5":'OCF error',
+    1:'Lin warn',
+    2:'Low mag field',
+    3:'No mag field',
+    4:'Parity error',
+    5:'OCF error',
 }
-                    
+
+load_state()    
 display = Display()
 
 class Settings():
@@ -119,8 +161,36 @@ class Settings():
         #l = Label(self.window, text="This is window" )
         #l.pack(side="top", fill="both", expand=True, padx=100, pady=100)
 
-    
+keymap = {
+    '<F1>':xmotor.inc_jog_speed,
+    '<F2>':xmotor.dec_jog_speed,
+    '<F5>':ymotor.inc_jog_speed,
+    '<F6>':ymotor.dec_jog_speed,
+}
+        
 class Application(Frame):
+    def __init__(self, master, pos_display):
+        self.master=master
+        Frame.__init__(self, master)
+        self.width, self.height = master.winfo_screenwidth(), master.winfo_screenheight()
+        self._geom="%ix%i+0+0"%(self.width, self.height)
+        self._thisrow = 0
+        self.grid(row=2)
+        self.pos_display = pos_display
+        self.createWidgets()
+        pad=3
+        master.geometry("{0}x{1}+0+0".format(
+            master.winfo_screenwidth()-pad, master.winfo_screenheight()-pad))
+        master.bind('<Escape>',self.toggle_geom)        
+        for k,v in keymap.iteritems():
+            master.bind(k,v)
+    
+    def toggle_geom(self,event):
+        geom=self.master.winfo_geometry()
+        print(geom,self._geom)
+        self.master.geometry(self._geom)
+        self._geom=geom
+    
     def settings(self):
         Settings(self).open()
     
@@ -128,8 +198,7 @@ class Application(Frame):
         return Frame(self.HISTORYFRAME, height=30, bd=1, relief=SUNKEN)
         
     def update_pos(self):
-        #Button(self.HISTORYFRAME_X, text='QUIT', fg='red', command=on_closing).grid(row=0,column=self.chx)
-        self.master.after(100, self.update_pos)
+        self.master.after(60, self.update_pos)
         self.pos_display.refresh_dro()
         
     def nextrow(self):
@@ -140,17 +209,17 @@ class Application(Frame):
         obj.grid(row=self.nextrow())
         return obj
     
-    def create_axis_digitdisplay(self, axis, parent, pos_variable):
-        #setattr(self, '%POSFRAME'
+    def create_axis_digitdisplay(self, axis, parent, var_position, var_errtxt, zero_cmd, abs_cmd):
         f = Frame(parent)
+        Label(f, textvariable=var_errtxt, bg='#efe', relief=FLAT, height=1, width=10, font = "Calibri 16").pack({"side": "left"})
         Label(f, text=axis, bg='#efe', relief=FLAT, height=1, width=10, font = "Calibri 32").pack({"side": "left"})
-        Button(f, text="Zero", command=display.zeroX).pack({"side": "right"})
-        Button(f, text="Abs/Rel", command=display.saveX).pack({"side": "right"})
-        Label(f, textvariable=pos_variable, bg='#efe', relief=FLAT, height=1, width=10, font = "Arial 32 ").pack({"side": "left"})
+        Button(f, text="Zero", command=zero_cmd).pack({"side": "right"})
+        Button(f, text="Abs/Rel", command=abs_cmd).pack({"side": "right"})
+        Label(f, textvariable=var_position, bg='#efe', relief=FLAT, height=1, width=10, font = "Arial 32 ").pack({"side": "left"})
         f.pack()
         
     def createWidgets(self):
-        self.MENUFRAME = Frame(root, width=self.width, height=30)
+        self.MENUFRAME = Frame(root,  bg='#efe', width=self.width, height=30)
         
         self.QUIT = Button(self.MENUFRAME, text='QUIT', fg='red', command=on_closing).grid(row=0, column=0)
         self.Settings = Button(self.MENUFRAME, text='Settings', fg='green', command=self.settings).grid(row=0, column=1)
@@ -174,14 +243,37 @@ class Application(Frame):
         self.DISPLAYFRAME = Frame(root, width=self.width)
         self.place_next(self.DISPLAYFRAME)
         
-        self.TOOLSFRAME = Frame(root, bg='#fff', width=self.width)
+        #spacer
+        self.place_next(Frame(root, bg='#efe',  height=20))
+        
+        self.TOOLSFRAME = Frame(root, bg='#efe',  height=220, width=self.width)
+        self.TOOLSFRAME.columnconfigure(0, weight=1)
         self.place_next(self.TOOLSFRAME)
         
-        self.create_axis_digitdisplay('X', self.DISPLAYFRAME, xdisplay)
-        self.create_axis_digitdisplay('Y', self.DISPLAYFRAME, ydisplay)
+        self.XTOOLSFRAME = Frame(self.TOOLSFRAME, bg='#efe', height=220, width=self.width/2)
+        self.YTOOLSFRAME = Frame(self.TOOLSFRAME, bg='#efe',  height=220, width=self.width/2)
+        
+        Label(self.XTOOLSFRAME, text="X Jog speed", font = "Calibri 16").pack({"side": "left"})
+        Entry(self.XTOOLSFRAME, font = "Calibri 16", textvariable=xmotor.jogspeeddisplay, width=6).pack({"side": "left"})
+        Button(self.XTOOLSFRAME, font = "Calibri 16", compound=LEFT, text="X+", command=xmotor.jogup).pack({"side": "left"})
+        Button(self.XTOOLSFRAME, font = "Calibri 16", compound=LEFT, text="X-", command=xmotor.jogdn).pack({"side": "left"})
+        
+        Label(self.YTOOLSFRAME, font = "Calibri 16", text="Y Jog speed").pack({"side": "left"})
+        Entry(self.YTOOLSFRAME, font = "Calibri 16", textvariable=ymotor.jogspeeddisplay, width=6).pack({"side": "left"})
+        Button(self.YTOOLSFRAME, font = "Calibri 16", compound=LEFT, text="Y+", command=ymotor.jogup).pack({"side": "left"})
+        Button(self.YTOOLSFRAME, font = "Calibri 16", compound=LEFT, text="Y-", command=ymotor.jogdn).pack({"side": "left"})
+        
+        self.create_axis_digitdisplay('X', self.DISPLAYFRAME, xdisplay, xerror, display.zeroX, display.saveX)
+        self.create_axis_digitdisplay('Y', self.DISPLAYFRAME, ydisplay, yerror, display.zeroY, display.saveY)
         #self.create_axis_digitdisplay('Z', self.DISPLAYFRAME, zdisplay)
-
-        canvas_height = 300
+        
+        self.XTOOLSFRAME.grid(row=0, column=0)
+        self.YTOOLSFRAME.grid(row=0, column=1)
+        
+        #spacer
+        self.place_next(Frame(root, bg='#efe',  height=20))
+        
+        canvas_height = 200
         c = self.canvas = Canvas(root, width=self.width, height=canvas_height)
         c.height = canvas_height
         c.width = self.width
@@ -189,62 +281,38 @@ class Application(Frame):
         c.grid(row=self.nextrow())
         macros.canvas = c
         macros.root = root
-        self.drillseries_rect_icon = PhotoImage(file="rect_drills.gif")
-        self.drillseries_circ_icon = PhotoImage(file="circle_drills.gif")
-        b = Button(self.TOOLSFRAME, compound=LEFT, image=self.drillseries_rect_icon, command=macros.Funcs.drillseries_rect).pack({"side": "left"})
-        b = Button(self.TOOLSFRAME, compound=LEFT, image=self.drillseries_circ_icon, command=macros.Funcs.drillseries_circ).pack({"side": "left"})
-        
+        #self.drillseries_rect_icon = PhotoImage(file="rect_drills.gif")
+        #self.drillseries_circ_icon = PhotoImage(file="circle_drills.gif")
+        #b = Button(self.TOOLSFRAME, compound=LEFT, image=self.drillseries_rect_icon, command=macros.Funcs.drillseries_rect).pack({"side": "left"})
+        #b = Button(self.TOOLSFRAME, compound=LEFT, image=self.drillseries_circ_icon, command=macros.Funcs.drillseries_circ).pack({"side": "left"})
         self.cd = Label(root, textvariable=root.coords_display, relief=FLAT, height=1, width=70, font="Arial 10")
         self.cd.grid(row=self.nextrow())
     
         self.update_pos()
-        
 
-    def __init__(self, master, pos_display, width=600, height=600):
-        Frame.__init__(self, master)
-        self.width, self.height = width, height
-        self._thisrow = 0
-        self.grid(row=2)
-        self.pos_display = pos_display
-        self.createWidgets()
         
 
 app = Application(master=root, pos_display=display)
 
-title = "Spaxx DRO "
+title = "Spaxx Lathe DRO"
 app.master.title(title)
-port = config.get('GENERAL', 'comport')
-baudrate = config.get('GENERAL', 'baudrate')
-try:
-    mode = config.get('GENERAL', 'mode')
-except:
-    mode = 0
-
 
 #thread_display = start_new_thread(display.refresh, ())
 class PosDataRefresh():    
-    def __init__(self, port, baudrate, display):
-        self.display = display
-        self.port = port
-        self.baudrate = baudrate
 
-    def get_axis_pos(self):
+    def __init__(self, display):
+        self.port = config.get('GENERAL', 'comport')
+        self.baudrate = config.get('GENERAL', 'baudrate')
+        self.display = display
+
+    def get_axis_stat(self):
         with LinearPositionComm(self.port, self.baudrate) as comm:
             while not Display.exit:
-                #print (self.xval, self.yval)
-                display.xval = comm.pos_receiver_lib.get_x_pos()
-                display.yval = comm.pos_receiver_lib.get_y_pos()
+                self.display.axis_stat = comm.pos_receiver_lib.get_axis_stat()
                 time.sleep(0.2)
 
-msg = " "
-
-threadmethod = PosDataRefresh(port, baudrate, display).get_axis_pos
-print msg
-
-app.master.title(title  + msg ) 
-start_new_thread(threadmethod, ())
 try:
-    start_new_thread(threadmethod, ())
+    start_new_thread(PosDataRefresh(display).get_axis_stat, ())
 except Exception, e:
     debugstr.set(`e`)
     display.globalerr = 'INIT ERR'

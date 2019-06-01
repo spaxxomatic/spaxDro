@@ -2,3 +2,4 @@
 dro.build
 dro.dist
 dro.exe
+*.pkl

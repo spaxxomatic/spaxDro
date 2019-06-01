@@ -1,0 +1,3 @@
+[submodule "spaxxpos"]
+	path = spaxxpos
+	url = https://github.com/spaxxomatic/spaxxpos.git
