@@ -156,7 +156,50 @@ class MacroDialog:
         if self.validate():
             self.top.destroy()
 
-class Funcs:
+class TurningFuncs:
+    @classmethod
+    def face(self):
+        projector = Projector(canvas)
+        inputs = ["X end", "Total depth", "Y increment", "Feed"]
+        d = MacroDialog(root, 'Rectangular drill grid', inputs, defvals=[10,1,1,1])
+        root.wait_window(d.top)
+        ret = d.returns
+        def calculate_moves(x_no, x_space, y_no, y_space):
+            coords = []
+            x_min = 0
+            y_min = 0
+            for i in range(int(x_no)):
+                for j in range(int(y_no)):
+                    coords.append((x_space*i, y_space*j))
+            return coords, x_space*(x_no-1), y_space*(y_no-1), x_min, y_min
+        coords, x_max, y_max, x_min, y_min = calculate_coords(*ret)
+        projector.show_points(coords, x_max, y_max, x_min, y_min)
+
+    @classmethod
+    def turn(self):
+        projector = Projector(canvas)
+        inputs = ["X end", "Pitch", "Depth"]
+        d = MacroDialog(root, 'Rectangular drill grid', inputs, defvals=[10,1,1]) 
+        root.wait_window(d.top)
+        ret = d.returns
+        def calculate_moves(x_end, pitch, depth):
+            return x_end, pitch, depth
+        coords, x_max, y_max, x_min, y_min = calculate_coords(*ret)
+        #projector.show_points(coords, x_max, y_max, x_min, y_min) 
+        
+    @classmethod
+    def thread(self):
+        projector = Projector(canvas)
+        inputs = ["X end", "Pitch", "Depth"]
+        d = MacroDialog(root, 'Rectangular drill grid', inputs, defvals=[10,1,1])
+        root.wait_window(d.top)
+        ret = d.returns
+        def calculate_moves(x_end, pitch, depth):
+            return x_end, pitch, depth
+        coords, x_max, y_max, x_min, y_min = calculate_coords(*ret)
+        #projector.show_points(coords, x_max, y_max, x_min, y_min)        
+    
+class MillFuncs:
 
     @classmethod
     def drillseries_rect(self):

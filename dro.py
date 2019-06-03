@@ -19,6 +19,7 @@ signal.signal(signal.SIGINT, signal_handler)
 from  spaxxpos.poslib import LinearPositionComm
 
 myfolder = os.path.dirname(os.path.realpath(__file__))
+staticfolder = os.path.join(myfolder, "static")
 
 configfile = os.path.join(myfolder,"dro.ini")
 os.chdir(myfolder)
@@ -29,6 +30,7 @@ root = Tk()
 from drivecontrol import xmotor, ymotor
 xdisplay = StringVar()
 ydisplay = StringVar()
+rpm_display = StringVar()
 wdisplay = StringVar()
 xerror = StringVar()
 yerror = StringVar()
@@ -94,6 +96,7 @@ class Display():
         self.yval_corr = persist_state.get('yval_corr', 0)
     xstorage = Storage()
     ystorage = Storage()
+    rpm = 0
     #zstorage = Storage()
     exit = 0 #flag for exit
     def refresh_threadfunc(self):
@@ -101,6 +104,7 @@ class Display():
             self.refresh()
             
     def refresh_dro(self):
+        rpm_display.set(self.rpm)
         stat = self.axis_stat
         if stat:
             xdisplay.set("%.3f"%(stat.xposition - self.xval_corr))
@@ -139,6 +143,7 @@ SENSOR_ERRORS = {
     3:'No mag field',
     4:'Parity error',
     5:'OCF error',
+    6:'Unknown',
 }
 
 load_state()    
@@ -187,7 +192,6 @@ class Application(Frame):
     
     def toggle_geom(self,event):
         geom=self.master.winfo_geometry()
-        print(geom,self._geom)
         self.master.geometry(self._geom)
         self._geom=geom
     
@@ -206,7 +210,12 @@ class Application(Frame):
         return self._thisrow
     
     def place_next(self, obj):
-        obj.grid(row=self.nextrow())
+        row = self.nextrow()
+        if isinstance(obj, (list, tuple)):
+            for idx, o in enumerate(obj): 
+                o.grid(row=row, column = idx)
+        else:
+            obj.grid(row=row)
         return obj
     
     def create_axis_digitdisplay(self, axis, parent, var_position, var_errtxt, zero_cmd, abs_cmd):
@@ -227,18 +236,22 @@ class Application(Frame):
         
         self.dbg = Label(root, textvariable=debugstr, relief=FLAT, height=1, width=70, font="Arial 10 bold")
         self.dbg.grid(row=self.nextrow())
-        self.HISTORYFRAME = Frame(root, width=self.width, height=30)
+        self.RPMFRAME = Frame(root, width=self.width/2, height=30)
+        self.HISTORYFRAME = Frame(root, width=self.width/2, height=30)
         
         Label(self.HISTORYFRAME, text="XMEM", bg='#efe',  height=1,  bd=1, width=12, font = "Calibri 12 bold").grid(row=0)
-        self.HISTORYFRAME_X = self.histframe().grid(row=self.nextrow(), column=1)
+        #self.HISTORYFRAME_X = self.histframe().grid(row=0, column=0)
         
         Label(self.HISTORYFRAME, text="YMEM", bg='#efe',  height=1,  bd=1, width=12, font = "Calibri 12 bold").grid(row=1)
-        self.HISTORYFRAME_Y = self.histframe().grid(row=self.nextrow(), column=1)
+        #self.HISTORYFRAME_Y = self.histframe().grid(row=0, column=1)
 
+        Label(self.RPMFRAME, text="RPM", bg='#efe',  height=1,  bd=1, width=4, font = "Calibri 12 bold").grid(column=0, row=0)
+        Label(self.RPMFRAME, textvariable=rpm_display, bg='#efe',  height=1,  bd=1, width=12, font = "Calibri 12 bold").grid(column=1, row=0)
+        
         #Label(self.HISTORYFRAME, text="ZYMEM", bg='#efe',  height=1,  width=12, font = "Calibri 12 bold").grid(row=2)
         #self.HISTORYFRAME_Z = self.histframe().grid(row=self.nextrow(), column=1) 
         #Label(self.HISTORYFRAME_Z, text="ZMEM", bg='#efe',  height=1, width=12, font = "Calibri 12 bold").pack(side=LEFT)
-        self.place_next(self.HISTORYFRAME)
+        self.place_next((self.RPMFRAME, self.HISTORYFRAME));
         
         self.DISPLAYFRAME = Frame(root, width=self.width)
         self.place_next(self.DISPLAYFRAME)
@@ -273,6 +286,8 @@ class Application(Frame):
         #spacer
         self.place_next(Frame(root, bg='#efe',  height=20))
         
+        self.MACROSFRAME=Frame(root, bg='#efe',  height=20)
+        
         canvas_height = 200
         c = self.canvas = Canvas(root, width=self.width, height=canvas_height)
         c.height = canvas_height
@@ -285,6 +300,10 @@ class Application(Frame):
         #self.drillseries_circ_icon = PhotoImage(file="circle_drills.gif")
         #b = Button(self.TOOLSFRAME, compound=LEFT, image=self.drillseries_rect_icon, command=macros.Funcs.drillseries_rect).pack({"side": "left"})
         #b = Button(self.TOOLSFRAME, compound=LEFT, image=self.drillseries_circ_icon, command=macros.Funcs.drillseries_circ).pack({"side": "left"})
+        b = Button(self.MACROSFRAME, compound=LEFT, image=PhotoImage(file=os.path.join(staticfolder, "face.gif")), command=macros.TurningFuncs.face).pack({"side": "left"})       
+        b = Button(self.MACROSFRAME, compound=LEFT, image=PhotoImage(file=os.path.join(staticfolder, "turn.gif")), command=macros.TurningFuncs.turn).pack({"side": "left"})
+        b = Button(self.MACROSFRAME, compound=LEFT, image=PhotoImage(file=os.path.join(staticfolder, "thread.gif")), command=macros.TurningFuncs.thread).pack({"side": "left"})
+        self.place_next(self.MACROSFRAME)
         self.cd = Label(root, textvariable=root.coords_display, relief=FLAT, height=1, width=70, font="Arial 10")
         self.cd.grid(row=self.nextrow())
     
@@ -305,14 +324,15 @@ class PosDataRefresh():
         self.baudrate = config.get('GENERAL', 'baudrate')
         self.display = display
 
-    def get_axis_stat(self):
+    def get_sensors(self):
         with LinearPositionComm(self.port, self.baudrate) as comm:
             while not Display.exit:
                 self.display.axis_stat = comm.pos_receiver_lib.get_axis_stat()
+                self.display.rpm_display = comm.pos_receiver_lib.get_rpm()
                 time.sleep(0.2)
 
 try:
-    start_new_thread(PosDataRefresh(display).get_axis_stat, ())
+    start_new_thread(PosDataRefresh(display).get_sensors, ())
 except Exception, e:
     debugstr.set(`e`)
     display.globalerr = 'INIT ERR'
