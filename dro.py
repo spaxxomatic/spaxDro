@@ -1,4 +1,5 @@
 from Tkinter import *
+
 import tkMessageBox
 import serial
 import ConfigParser
@@ -24,6 +25,9 @@ staticfolder = os.path.join(myfolder, "static")
 configfile = os.path.join(myfolder,"dro.ini")
 os.chdir(myfolder)
 print "Reading config file %s"%configfile
+config = ConfigParser.ConfigParser()
+config.read(configfile)
+
 root = Tk()
 #root.overrideredirect(True) #hides the title bar
 #root.geometry("{0}x{1}+0+0".format(root.winfo_screenwidth(), root.winfo_screenheight()))
@@ -39,13 +43,12 @@ bdisplay = StringVar()
 rpmdisplay = StringVar()
 root.coords_display = StringVar()
 debugstr = StringVar()
-xstep, ystep = None, None
-config = ConfigParser.ConfigParser()
-config.read(configfile)
+xstep, ystep, rpm_sensor_pin = None, None, None
 
 try:
     xstep = float(config.get('RESOLUTION', 'x_step_size'))
     ystep = float(config.get('RESOLUTION', 'y_step_size'))
+    rpm_sensor_pin = int(config.get('GENERAL', 'rpm_sensor_pin'))
     #zstep = float(config.get('RESOLUTION', 'z_step_size'))
 except Exception, e:
     print "Invalid config file: %s"%(str(e))
@@ -127,7 +130,7 @@ class Display():
         self.xstorage.append(self.axis_stat.xposition)
     def saveY(self): 
         self.ystorage.append(self.axis_stat.yposition)
-
+        
 SENSOR_ERRORS = {
    #enum {
    #   OK,
@@ -161,7 +164,7 @@ class Settings():
         e.focus_set()
         self.window.transient(root)
         self.window.grab_set()
-        self.parent.wait_window(wdw)
+        self.parent.wait_window(self.window)
         #self.window.wm_title("Settings")
         #l = Label(self.window, text="This is window" )
         #l.pack(side="top", fill="both", expand=True, padx=100, pady=100)
@@ -172,7 +175,21 @@ keymap = {
     '<F5>':ymotor.inc_jog_speed,
     '<F6>':ymotor.dec_jog_speed,
 }
-        
+
+def KeyboardEvent(event):
+    if event.keysym_num > 0 and event.keysym_num < 60000:
+        print('This is a printable key. The character is: %r keysym: %r' % \
+            (event.char, event.keysym_num))
+    else:
+#269025041
+#269025041
+#269025043
+#269025046
+#269025047
+    
+        print('This key is unprintable. The character is: %r keysym: %r' % \
+            (event.char, event.keysym_num))
+            
 class Application(Frame):
     def __init__(self, master, pos_display):
         self.master=master
@@ -226,6 +243,14 @@ class Application(Frame):
         Button(f, text="Abs/Rel", command=abs_cmd).pack({"side": "right"})
         Label(f, textvariable=var_position, bg='#efe', relief=FLAT, height=1, width=10, font = "Arial 32 ").pack({"side": "left"})
         f.pack()
+    
+    def create_macro_button(self, imagefile, handler):
+        img = PhotoImage(file=os.path.join(staticfolder, imagefile))
+        btn = Button(self.MACROSFRAME, compound=LEFT, image=img, command=handler)
+        btn.image = img
+        btn.pack({"side": "left"})
+        
+
         
     def createWidgets(self):
         self.MENUFRAME = Frame(root,  bg='#efe', width=self.width, height=30)
@@ -247,6 +272,9 @@ class Application(Frame):
 
         Label(self.RPMFRAME, text="RPM", bg='#efe',  height=1,  bd=1, width=4, font = "Calibri 12 bold").grid(column=0, row=0)
         Label(self.RPMFRAME, textvariable=rpm_display, bg='#efe',  height=1,  bd=1, width=12, font = "Calibri 12 bold").grid(column=1, row=0)
+        tmp = Entry(self.RPMFRAME, text="Press key", bg='#efe',  bd=1, width=12, font = "Calibri 12 bold")
+        tmp.bind('<KeyPress>', KeyboardEvent)            
+        tmp.grid(column=2, row=0)
         
         #Label(self.HISTORYFRAME, text="ZYMEM", bg='#efe',  height=1,  width=12, font = "Calibri 12 bold").grid(row=2)
         #self.HISTORYFRAME_Z = self.histframe().grid(row=self.nextrow(), column=1) 
@@ -279,7 +307,6 @@ class Application(Frame):
         self.create_axis_digitdisplay('X', self.DISPLAYFRAME, xdisplay, xerror, display.zeroX, display.saveX)
         self.create_axis_digitdisplay('Y', self.DISPLAYFRAME, ydisplay, yerror, display.zeroY, display.saveY)
         #self.create_axis_digitdisplay('Z', self.DISPLAYFRAME, zdisplay)
-        
         self.XTOOLSFRAME.grid(row=0, column=0)
         self.YTOOLSFRAME.grid(row=0, column=1)
         
@@ -287,6 +314,9 @@ class Application(Frame):
         self.place_next(Frame(root, bg='#efe',  height=20))
         
         self.MACROSFRAME=Frame(root, bg='#efe',  height=20)
+        self.create_macro_button("face.gif", macros.TurningFuncs.face)
+        self.create_macro_button("turn.gif", macros.TurningFuncs.turn)
+        self.create_macro_button("thread.gif", macros.TurningFuncs.thread)
         
         canvas_height = 200
         c = self.canvas = Canvas(root, width=self.width, height=canvas_height)
@@ -300,10 +330,10 @@ class Application(Frame):
         #self.drillseries_circ_icon = PhotoImage(file="circle_drills.gif")
         #b = Button(self.TOOLSFRAME, compound=LEFT, image=self.drillseries_rect_icon, command=macros.Funcs.drillseries_rect).pack({"side": "left"})
         #b = Button(self.TOOLSFRAME, compound=LEFT, image=self.drillseries_circ_icon, command=macros.Funcs.drillseries_circ).pack({"side": "left"})
-        b = Button(self.MACROSFRAME, compound=LEFT, image=PhotoImage(file=os.path.join(staticfolder, "face.gif")), command=macros.TurningFuncs.face).pack({"side": "left"})       
-        b = Button(self.MACROSFRAME, compound=LEFT, image=PhotoImage(file=os.path.join(staticfolder, "turn.gif")), command=macros.TurningFuncs.turn).pack({"side": "left"})
-        b = Button(self.MACROSFRAME, compound=LEFT, image=PhotoImage(file=os.path.join(staticfolder, "thread.gif")), command=macros.TurningFuncs.thread).pack({"side": "left"})
+        file = os.path.join(staticfolder, "face.gif")
+        #print os.path.exists(file)
         self.place_next(self.MACROSFRAME)
+        
         self.cd = Label(root, textvariable=root.coords_display, relief=FLAT, height=1, width=70, font="Arial 10")
         self.cd.grid(row=self.nextrow())
     
@@ -325,7 +355,7 @@ class PosDataRefresh():
         self.display = display
 
     def get_sensors(self):
-        with LinearPositionComm(self.port, self.baudrate) as comm:
+        with LinearPositionComm(self.port, self.baudrate, rpm_sensor_pin) as comm:
             while not Display.exit:
                 self.display.axis_stat = comm.pos_receiver_lib.get_axis_stat()
                 self.display.rpm_display = comm.pos_receiver_lib.get_rpm()
